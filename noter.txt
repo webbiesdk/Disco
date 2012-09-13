@@ -1,0 +1,3 @@
+TODO: Lav en server klasse, brug den i stedet for jgroups.Address
+
+java -cp jgroups.jar;. -Djava.net.preferIPv4Stack=true Test
