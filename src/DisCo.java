@@ -11,6 +11,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import network.ClusterHandler;
 
@@ -28,8 +30,6 @@ public class DisCo<E> {
 	private ThreadPool pool; // The threadpool.
 	
 	private ClusterHandler<E> cluster = null; // If the cluster is started, this is where it goes. 
-	private Map<Class<?>, Boolean> alreadySubmitted; // A map (where i do not use the keys) to hold all the classes that have already gone into the clusters shared state. So that i know what not to do again. 
-	
 	/**
 	 * The simplest constructor of DisCo. 
 	 * This just launches a local-only instance of DisCo, with a default number of threads that can use the entire local processor. 
@@ -71,7 +71,7 @@ public class DisCo<E> {
 		this.pool = new ThreadPool(new StackBlockingQueue<WorkContainer<E>>(env.getDeque()), threads);
 		pool.start();
 		
-		alreadySubmitted = new HashMap<Class<?>, Boolean>();
+		new HashMap<Class<?>, Boolean>();
 		
 		if (useCluster)
 		{
@@ -86,9 +86,18 @@ public class DisCo<E> {
 	 * @return A future holding the result from the job, and gives a interface to cancel it. 
 	 */
 	public Future<E> execute(Job<E> job)
-	{
+	{ 
 		// First setting all the variables that we use. 
 		long id = env.getIncrementedLocalId();
+
+		// Making sure the job class is known by the cluster. 
+		if (cluster != null)
+		{
+			for (Entry<String, byte[]> entry : getClassesMap(job.getClass()).entrySet())
+			{
+				cluster.addToClasses(entry.getKey(), entry.getValue());
+			}
+		}
 		
 		final WorkContainer<E> container = new WorkContainer<E>(env, job, id, 0, 0);
 		
@@ -144,16 +153,77 @@ public class DisCo<E> {
 			}
 
 			@Override
-			public synchronized E get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
-				throw new UnsupportedOperationException(); // TODO: Don't do this. 
+			public synchronized E get(final long timeout, final TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+				final ObjectContainer<E> res = new ObjectContainer<E>();
+				Lock lock = new ReentrantLock();
+				final Thread timeOutThread = new Thread(new Runnable(){
+					@Override
+					public void run() {
+						try {
+							unit.sleep(timeout);
+						} catch (InterruptedException e) {
+							return;
+						}
+						container.abort();
+						resultLatch.countDown();
+					}
+				});
+				Thread resultThread;
+				resultThread = new Thread(new Runnable(){
+					@Override
+					public void run() {
+						try {
+							resultLatch.await();
+							if (container.isAborted())
+							{
+								res.setException(new ExecutionException(new RuntimeException("Job was aborted/cancelled.")));								
+							}
+						} catch (InterruptedException e) {
+							res.setException(e);
+						}
+						res.setObject(result.getResult());
+						timeOutThread.interrupt();
+					}
+				});
+				
+				timeOutThread.start();
+				resultThread.start();
+				lock.lock();
+				try {
+					return res.getObject();
+				} catch (Exception e) {
+					if (e instanceof InterruptedException)
+						throw (InterruptedException)e;
+					else if (e instanceof ExecutionException)
+						throw (ExecutionException)e;
+					else if (e instanceof TimeoutException)
+						throw (TimeoutException)e;
+					else
+						e.printStackTrace();
+				}
+				return null;
 			}
 		};
 		
-		// Making sure that the cluster (if there) can execute it. 
-		submitClasses(job.getClass());
-		
-		
 		return res;
+	}
+	class ObjectContainer<T> {
+		T obj;
+		Exception e = null;
+		void setObject(T obj)
+		{
+			this.obj = obj;
+		}
+		void setException(Exception e)
+		{
+			this.e = e;
+		}
+		T getObject() throws Exception
+		{
+			if (e != null)
+				throw e;
+			return obj;
+		}
 	}
 	/**
 	 * Closes this DisCo instance. Interrupts the threads and close the cluster. 
@@ -174,35 +244,24 @@ public class DisCo<E> {
 		}).start();
 	}
 	/**
-	 * A private method to submit classes to the shared state of the network. 
-	 * @param classesIn The classes that should be submitted. 
-	 * @return false if there is no cluster. 
+	 * Returns a map of String and bytes representing the name and bytes of the classes given as input. 
+	 * @param classesIn The classes to convert. 
+	 * @return a map of String and bytes representing the name and bytes of the classes given as input.
 	 */
-	private boolean submitClasses(Class<?>... classesIn)
+	private Map<String, byte[]> getClassesMap(Class<?>... classesIn)
 	{
-		if (cluster == null)
-			return false;
 		List<Class<?>> classes = new ArrayList<Class<?>>();
 		
 		for (int i = 0; i < classesIn.length; i++)
 		{
-			if (!alreadySubmitted.containsKey(classesIn[i]))
-			{
-				classes.add(classesIn[i]);
-				alreadySubmitted.put(classesIn[i], true);
-			}
+			classes.add(classesIn[i]);
 		}
 		
-		Map<String, byte[]> classesMap = null;
 		Class<?>[] emptyClassArray = {};
 		try {
-			classesMap = io.Classes.toClassNameAndBytesMap(classes.toArray(emptyClassArray));
-		} catch (IOException e1) {}
-		for (Entry<String, byte[]> entry : classesMap.entrySet())
-		{
-			cluster.putClassInSharedState(entry.getKey(), entry.getValue());
+			return io.Classes.toClassNameAndBytesMap(classes.toArray(emptyClassArray));
+		} catch (IOException e1) {
+			return null;
 		}
-		
-		return true;
 	}
 }

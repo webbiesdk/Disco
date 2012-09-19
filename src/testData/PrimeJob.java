@@ -37,8 +37,8 @@ public class PrimeJob extends Job<Integer>{
 			int halfDiff = diff / 2;
 			invoke(new PrimeJob(start, end - halfDiff));
 			invoke(new PrimeJob(end - halfDiff + 1, end));
+			return null;
 		}
-		return null;
 	}
 	@Override
 	public Integer join(List<Integer> list) {

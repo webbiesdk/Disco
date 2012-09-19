@@ -1,6 +1,5 @@
 package network.data;
 
-import org.jgroups.Address;
 
 import model.WorkContainer;
 
@@ -15,13 +14,13 @@ import model.WorkContainer;
 public class ReceivedJob<E> {
 	private WorkContainer<E> work;
 	private long orgId;
-	private Address address;
+	private Server address;
 	/**
 	 * @param work The job associated with this received jobs. 
 	 * @param orgId The id the job had on the machine it came from.  
 	 * @param address The address of the machine the job came from. 
 	 */
-	public ReceivedJob(WorkContainer<E> work, long orgId, Address address)
+	public ReceivedJob(WorkContainer<E> work, long orgId, Server address)
 	{
 		this.work = work;
 		this.orgId = orgId;
@@ -40,9 +39,9 @@ public class ReceivedJob<E> {
 		return orgId;
 	}
 	/**
-	 * @return the address of the machine where the job came from. 
+	 * @return the address of the machine where the job came from . 
 	 */
-	public Address getAddress() {
+	public Server getAddress() {
 		return address;
 	}
 	@Override

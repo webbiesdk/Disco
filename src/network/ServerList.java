@@ -1,18 +1,16 @@
 package network;
 import network.data.NetworkState;
+import network.data.Server;
 import network.data.StateEntry;
 import network.data.NetworkState.MemberState;
 
 import org.jgroups.*;
-import org.jgroups.util.Util;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 
 public class ServerList implements Receiver {
 	MessageReciever receiver; // The receiver that is called whenever this class doesn't know what to do with an received object.  
@@ -20,29 +18,16 @@ public class ServerList implements Receiver {
 	boolean reportAvailable; // Whether or not this instance when started should say it is available, or busy. 
 	
     JChannel channel; // The JChannel that i use to communicate. 
-    final NetworkState state;// // Holding the shared state in the cluster. 
-    
-    Map<String, byte[]> thisNodesSharedStateContribution; // Well, the name says almost everything. This hold the entries this node want to contribute to the shared state. 
+    final NetworkState state;// // Holding the shared state in the cluster.  
     
     List<Address> memberList = new ArrayList<Address>(); // Used to detect removed members of the cluster.
     
     /**
      * Note that nothing happens before start() is called.
-     * @param reciever The receiver that receives anything that this class doesn't know what to do with (This class handles all NetworkState.MemberState and Entry<String, byte[]>). 
-     * @param reportAvailable Whether or not this node should report that it is available.  
-     */
-    public ServerList(MessageReciever receiver, boolean reportAvailable)
-	{
-    	this(receiver, reportAvailable, new HashMap<String, byte[]>());
-	}
-    
-    /**
-     * Note that nothing happens before start() is called.
      * @param reciever The receiver that receives anything that this class doesn't know what to do with. That means, just about anything except some very specific classes that are also in this package. 
      * @param reportAvailable Whether or not this node should report that it is available.  
-     * @param sharedState This nodes contribution to the shared state. 
      */
-	public ServerList(MessageReciever receiver, boolean reportAvailable, Map<String, byte[]> sharedState)
+	public ServerList(MessageReciever receiver, boolean reportAvailable)
 	{
 		this.receiver = receiver;
 		this.reportAvailable = reportAvailable;
@@ -52,8 +37,7 @@ public class ServerList implements Receiver {
 			// Really really not supposed to happen. 
 			e.printStackTrace();
 		}
-		state = new NetworkState(channel.getAddress());
-		this.thisNodesSharedStateContribution = sharedState;
+		state = new NetworkState(new Server(channel.getAddress()));
 	}
 	
 	/**
@@ -65,14 +49,8 @@ public class ServerList implements Receiver {
 		channel.setReceiver(this);  
 		// Connecting.
         channel.connect("DisCoCluster");
-        // Getting the state from somewhere else. I do not care where. 
-        channel.getState(null, 10000);  
         
-        // Just sending our contribution to the shared state, one at the time. 
-        for (Entry<String, byte[]> entry : thisNodesSharedStateContribution.entrySet())
-        {
-        	SendToServer(new StateEntry(entry.getKey(), entry.getValue()), null, null);
-        }
+        // Now to tell the cluster if we are open for business. 
         isBusy(!reportAvailable);
     }
 	/**
@@ -111,10 +89,11 @@ public class ServerList implements Receiver {
     	{
     		for (Address address : deleted)
     		{
+    			Server server = new Server(address);
     			synchronized(state) {
-    				state.removeServer(address);
+    				state.removeServer(server);
                 }
-    			deletedServerListener.actionPerformed(new ActionEvent(address, 0, "Server removed"));
+    			deletedServerListener.actionPerformed(new ActionEvent(server, 0, "Server removed"));
     		}
     	}
     }
@@ -132,7 +111,7 @@ public class ServerList implements Receiver {
         	// We received that one of the members in the cluster has changed its state. So we should update our NetworkState. 
         	NetworkState.MemberState memberState = (NetworkState.MemberState)obj;
         	synchronized(state) {
-                state.setServerState(msg.getSrc(), memberState);
+                state.setServerState(new Server(msg.getSrc()), memberState);
             }
         }
         else if (obj instanceof StateEntry)
@@ -145,7 +124,7 @@ public class ServerList implements Receiver {
         else
         {
         	// When i do not know what to do with it, i pass it on. 
-        	receiver.Recieve(msg.getObject(), msg.getSrc());
+        	receiver.Recieve(msg.getObject(), new Server(msg.getSrc()));
         }
     }
     /**
@@ -156,25 +135,29 @@ public class ServerList implements Receiver {
      */
     public boolean sendStateEntry(String key, byte[] value)
     {
-    	return SendToServer(new StateEntry(key, value), null, null);
+    	return SendToServer(new StateEntry(key, value), (Address)null, (Address)null);
     }
     /**
      * Puts the current state in the specified OutputStream. 
      */
+    @Override
     public void getState(OutputStream output) throws Exception {
-        synchronized(state) {
+    	throw new UnsupportedOperationException("getState should never be called. ");
+        /* synchronized(state) {
             Util.objectToStream(state, new DataOutputStream(output));
-        }
+        } */
     }
     /**
      * Sets the state that it got from another node in the cluster. 
      * This is only called once, if it joins a cluster that already has other members. 
      */
+    @Override
     public void setState(InputStream input) throws Exception {
-        NetworkState new_state =(NetworkState)Util.objectFromStream(new DataInputStream(input));
+    	throw new UnsupportedOperationException("setState should never be called");
+        /* NetworkState new_state =(NetworkState)Util.objectFromStream(new DataInputStream(input));
         synchronized(state) {
         	// Setting the status of all the members. 
-        	for (Entry<Address, NetworkState.MemberState> entry : new_state.getServerMap().entrySet())
+        	for (Entry<Server, NetworkState.MemberState> entry : new_state.getServerMap().entrySet())
         	{
         		state.setServerState(entry.getKey(), entry.getValue());
         	}
@@ -184,7 +167,7 @@ public class ServerList implements Receiver {
         		state.putInSharedState(new StateEntry(entry.getKey(), entry.getValue()));
         	}
         }
-        System.out.println("Got state: " + state);
+        System.out.println("Got state: " + state); */
     }
     /**
      * Returns the shared state that is shared in the cluster. Changes in the cluster state are reflected in this map. 
@@ -212,14 +195,14 @@ public class ServerList implements Receiver {
     	{
     		message = NetworkState.MemberState.AVAILABLE;
     	}
-    	SendToServer(message, null, null);
+    	SendToServer(message, (Address)null, null);
     }
     /**
      * This method is called whenever you got a server from getAvailableServer, but then didn't use that anyway. 
      * @param server the server that was available that you didn't use. 
      * @throws InterruptedException 
      */
-    public void didntUseAvailableServer(Address server) throws InterruptedException
+    public void didntUseAvailableServer(Server server) throws InterruptedException
     {
     	state.didntUseAvailableServer(server);
     }
@@ -228,9 +211,9 @@ public class ServerList implements Receiver {
      * @param server the server you got a job from, that you want to get another from. 
      * @throws Exception 
      */
-    public void sendStillAvailable(Address server) throws Exception
+    public void sendStillAvailable(Server server) throws Exception
     {
-    	Message msg = new Message(server, null, NetworkState.MemberState.AVAILABLE);
+    	Message msg = new Message(server.getAddress(), null, NetworkState.MemberState.AVAILABLE);
     	channel.send(msg);
     }
     /**
@@ -238,12 +221,12 @@ public class ServerList implements Receiver {
      * 
      * @return an available server. Will block until there is one available.
      */
-    public Address getAvailableServer()
+    public Server getAvailableServer()
     {
     	try {
     		while(true)
     		{
-    			Address res = state.getAvailableServer();
+    			Server res = state.getAvailableServer();
     			// I do not return if the address is my own. 
     			if (!res.equals(channel.getAddress()))
 				{
@@ -265,7 +248,7 @@ public class ServerList implements Receiver {
 	 * @param server the server you want the state from. 
 	 * @return the current state of the server (or null if it isn't in the current cluster). 
 	 */
-	public MemberState getServerState(Address server)
+	public MemberState getServerState(Server server)
 	{
 		return state.getServerState(server);
 	}
@@ -278,8 +261,7 @@ public class ServerList implements Receiver {
      */
     public synchronized boolean SendToServer(Object obj, Address server, Address source)
     {
-    	
-		Message msg = new Message(server, source, obj);
+    	Message msg = new Message(server, source, obj);
 		try {
 			channel.send(msg);
 		} catch (Exception e) {
@@ -288,24 +270,32 @@ public class ServerList implements Receiver {
 		}
 		return true;
     }
+    /**
+     * Sends an object to the specified server (or the entire cluster). 
+     * @param obj The object to send (generics doesn't work over the network, so no point in having them). 
+     * @param server The server the object needs to be sent to. If null, the object will be send to the entire cluster. 
+     * @param source Where does the object come from, if null then its by default this sever. 
+     * @return Success. Whether or not it actually succeed in sending the object without errors. 
+     */
+    public boolean SendToServer(Object obj, Server server, Server source)
+    {
+    	// I basically just convert out "outer" interface Server into our own Address. Remebering that null is a legal address (and server). 
+    	Address addressServer = server == null ? null : server.getAddress();
+    	Address addresssource = source == null ? null : source.getAddress();
+    	return SendToServer(obj, addressServer, addresssource);
+    }
     /*
      * The below 3 methods are part of the Receiver interface, but i do not use them (yet). 
      */
     @Override
 	public void block() {
-		// TODO Auto-generated method stub
-		
 	}
 
 	@Override
 	public void suspect(Address arg0) {
-		// TODO Auto-generated method stub
-		
 	}
 
 	@Override
 	public void unblock() {
-		// TODO Auto-generated method stub
-		
 	}
 }

@@ -22,8 +22,8 @@ import network.data.BytePackage;
 import network.data.ClusterMessage;
 import network.data.NetworkState;
 import network.data.ReceivedJob;
+import network.data.Server;
 
-import org.jgroups.Address; // TODO: This should't be here. 
 /**
  * This class takes an Environment in the constructor, and from that, sends out jobs to other nodes in the cluster that can run the jobs. 
  * If you give it a map of classes (<String, byte[]>) it will also be able to send that out to the other nodes in the cluster, and from that send jobs whose class at compile-time was unknown to the receiver. 
@@ -43,7 +43,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 	
 	private Thread sendThread; // The thread that just keeps sending out jobs to everyone else. 
 	
-	private Map<Address, List<WorkContainer<E>>> sentJobs; // A map holding all the jobs that have been send in a map with the Address they were send to as the key.
+	private Map<Server, List<WorkContainer<E>>> sentJobs; // A map holding all the jobs that have been send in a map with the Address they were send to as the key.
 	
 	private Map<Long, ReceivedJob<E>> receivedJobs; // A map of all the jobs that has been received. Mostly used when sending a received job to another client.  
 	
@@ -117,7 +117,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 		this.env = env;
 		this.reportAvailable = reportAvailable;
 		
-		this.sentJobs = new HashMap<Address, List<WorkContainer<E>>>();
+		this.sentJobs = new HashMap<Server, List<WorkContainer<E>>>();
 		
 		this.receivedJobs = new HashMap<Long, ReceivedJob<E>>();
 		
@@ -150,7 +150,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 		return new ActionListener(){
 			@Override
 			public void actionPerformed(ActionEvent e) {
-				Address address = (Address)e.getSource();
+				Server address = (Server)e.getSource();
 				serverCrashed(address);
 			}
 		};
@@ -177,6 +177,15 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 		serverList.close();
 	}
 	/**
+	 * Puts a class in the CluserHandler, so it can send it to another server if needed. 
+	 * @param name
+	 * @param bytes
+	 */
+	public void addToClasses(String name, byte[] bytes)
+	{
+		classes.put(name, bytes);
+	}
+	/**
 	 * This methods returns a classLoader that can translate the objects that belongs to the classes that is contained within the SharedStateMap. 
 	 * @return A ClassLoader that can translate the objects that belongs to the classes that is contained within the SharedStateMap.
 	 */
@@ -198,7 +207,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 		/*
 		 * Setting up the serverList. 
 		 */
-		this.serverList = new ServerList(this, reportAvailable, classes);
+		this.serverList = new ServerList(this, reportAvailable);
 		this.serverList.setDeletedServerListener(getDeletedServerListener());
 		
 		try {
@@ -219,7 +228,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 		 */
 		while(!Thread.currentThread().isInterrupted())
 		{
-			Address server;
+			Server server;
 			// The getAvailableServer() method is a blocking method, so we have no idea of when it is going to return anything. 
 			if ((server = serverList.getAvailableServer()) != null)
 			{
@@ -319,21 +328,6 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 		}
 	}
 	/**
-     * Puts a new class in the shared state (including this nodes shared state. 
-     * This method waits for the serverList to be ready, if it isn't. 
-     * @param key The string key this entry in the shared classes map. 
-     * @param value The bytes for this entry in the shared state. 
-     * @return Whether or not this was successfully send. 
-     */
-    public boolean putClassInSharedState(String key, byte[] value)
-    {
-    	// Waiting for the serverList to be ready. 
-    	try {
-			serverListReady.await();
-		} catch (InterruptedException ignored) {}
-    	return serverList.sendStateEntry(key, value);
-    }
-	/**
 	 * This method is used to send an object to a server, if it is a job, result or whatever. 
 	 * In some cases, the method will recognize the object, and based on that encapsulate it in a BytePackage. 
 	 * @param obj The object to be sent. 
@@ -341,7 +335,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 	 * @return Whether or not the object was successfully sent. 
 	 */
 	@SuppressWarnings("rawtypes")
-	private boolean SendToServer(Object obj, Address server)
+	private boolean SendToServer(Object obj, Server server)
 	{
 		// First i need to know that i can do this. 
 		try {
@@ -378,7 +372,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 	 */
 	@SuppressWarnings({ "rawtypes" }) // Using generics, because its useful. Then completely abusing it beyond anything it was designed for, because thats useful too. 
 	@Override
-	public void Recieve(Object obj, final Address sender) {
+	public void Recieve(Object obj, final Server sender) {
 		if (obj instanceof BytePackage)
 		{
 			BytePackage pack = (BytePackage)obj;
@@ -419,12 +413,14 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 		// This shouldn't be called, ever. But i still keep it in case something weird happens to the sender, because then we do risk that they send an WorkContainer. 
 		else if (obj instanceof WorkContainer)
 		{
+			System.out.println("A WorkContainer was send, that's not supposed to happen!");
 			WorkContainer work = (WorkContainer)obj;
 			receiveWork(work, sender);
 		}
 		// This shouldn't be called, ever. But i still keep it in case something weird happens to the sender, because then we do risk that they send a Result. 
 		else if (obj instanceof Result)
 		{
+			System.out.println("A Result was send, that's not supposed to happen!");
 			Result result = (Result)obj;
 			receiveResult(result, sender);
 		}
@@ -440,7 +436,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 	 * @param id The id of the Job. From this the job is found in the sent jobs. 
 	 * @param sender The address of the node that wasn't able to complete the job. 
 	 */
-	private void recoverJob(long id, Address sender)
+	private void recoverJob(long id, Server sender)
 	{
 		synchronized(sentJobs)
 		{
@@ -470,7 +466,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 	 * @param sender Who it was send from. Mostly used to send the result back. 
 	 */
 	@SuppressWarnings({ "rawtypes", "unchecked" })
-	private void receiveWork(final WorkContainer work, final Address sender)
+	private void receiveWork(final WorkContainer work, final Server sender)
 	{
 		// Saving the id the job had on the machine it came from. This is useful when sending back the result.  
 		final long prevID = work.getId();
@@ -551,7 +547,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 	 * @param sender The address of the node that sent the result to us. (Makes it easier to find). 
 	 */
 	@SuppressWarnings({ "rawtypes", "unchecked" })
-	private void receiveResult(Result result, Address sender) {
+	private void receiveResult(Result result, Server sender) {
 		// Removes the job from the map of jobs.
 		synchronized(sentJobs)
 		{
@@ -578,7 +574,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 	 * @param message The message that was sent from another server in the cluster. 
 	 * @param sender The address of the server that sent the message. 
 	 */
-	private void receiveMessage(ClusterMessage message, Address sender) {
+	private void receiveMessage(ClusterMessage message, Server sender) {
 		if (message.getMessage() == ClusterMessage.Message.ABORT)
 		{
 			// We have been told that we should abort a single job, that was send from the sender. So lets first find all the jobs that they have sent to us. 
@@ -608,7 +604,11 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 		else if (message.getMessage() == ClusterMessage.Message.WORK_CLASSEXCEPTION)
 		{
 			// A job couldn't be translated by the far side. 
-			// We just put the job back in the queue, and pretend nothing happened. // TODO: Do some more. 
+			// We just put the job back in the queue, and send the classes that could fix the issue. 
+			for (Entry<String, byte[]> entry : classes.entrySet())
+			{
+				serverList.sendStateEntry(entry.getKey(), entry.getValue());
+			}
 			System.out.println("Got a WORK_CLASSEXCEPTION recovering");
 			recoverJob(message.getId(), sender);
 		}
@@ -621,7 +621,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 	 * This method is called whenever a server crashes, it makes sure to make a proper recovery on this node. 
 	 * @param server the server that crashed. 
 	 */
-	private synchronized void serverCrashed(Address server)
+	private synchronized void serverCrashed(Server server)
 	{
 		/*
 		 * There are two parts to this. 
@@ -690,7 +690,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 	 * The server parameter is if it is a specific server that has crashed, and we need to remove every trace of that. The parameter can safely be null, if it is not a specific server that has crashed. 
 	 * @param server the server that has crashed (or null if no specific server has crashed). 
 	 */
-	private void abortCleanup(final Address crashedServer)
+	private void abortCleanup(final Server crashedServer)
 	{
 		// Doing this all in a new thread, since it can do quite some blocking, and it can take a lot of time. 
 		new Thread(new Runnable(){
@@ -699,17 +699,17 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 				// Nothing to do other than just going through everything. 
 				// Starting by going through all the sentJobs, if any of them were aborted, the receiver should know. 
 				// Not sending the messages right now, since we have a lock on sentJobs. 
-				Map<ClusterMessage, Address> messages = new HashMap<ClusterMessage, Address>();
+				Map<ClusterMessage, Server> messages = new HashMap<ClusterMessage, Server>();
 				synchronized(sentJobs)
 				{
 					/*
 					 * Going through all sent jobs, if any of them is no longer RUNNABLE, we tell the server that received the job, that it has been aborted. /
 					 */
-					Iterator<Entry<Address, List<WorkContainer<E>>>> sentJobsIterator = sentJobs.entrySet().iterator();
+					Iterator<Entry<Server, List<WorkContainer<E>>>> sentJobsIterator = sentJobs.entrySet().iterator();
 					while (sentJobsIterator.hasNext())
 					{
 						// Getting a list and a iterator of the work associated with this server. 
-						Entry<Address, List<WorkContainer<E>>> entry = sentJobsIterator.next();
+						Entry<Server, List<WorkContainer<E>>> entry = sentJobsIterator.next();
 						List<WorkContainer<E>> workList = entry.getValue();
 						Iterator<WorkContainer<E>> workIterator = workList.iterator();
 						while(workIterator.hasNext())
@@ -734,7 +734,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 					}
 				}
 				// Sending those messages. 
-				for (Entry<ClusterMessage, Address> entry : messages.entrySet())
+				for (Entry<ClusterMessage, Server> entry : messages.entrySet())
 				{
 					SendToServer(entry.getKey(), entry.getValue());
 				}

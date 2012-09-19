@@ -8,7 +8,7 @@ public class Test {
 		
 		System.out.println("Start");
 		long start = System.currentTimeMillis();
-		Job<Integer> job = new PrimeJob(1, 30000000);
+		Job<Integer> job = new PrimeJob(1, 3000000);
 		
 		DisCo<Integer> dis = new DisCo<Integer>(1, true, false);
 		System.out.println(dis.execute(job).get());

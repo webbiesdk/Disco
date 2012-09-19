@@ -6,9 +6,6 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.LinkedBlockingQueue;
-
-
-import org.jgroups.Address;
 /**
  * This class holds the state of the cluster, including the shared state (a <string, byte[]> map). 
  * It also hold a blocking method to get an available server. 
@@ -24,18 +21,18 @@ public class NetworkState implements Serializable{
 	
 	public static enum MemberState {AVAILABLE, BUSY}; // The different states that the members can be in. 
 	
-	Map<Address, MemberState> servers; // A map of the servers
+	Map<Server, MemberState> servers; // A map of the servers
 	ConcurrentMap<String, byte[]> sharedStateMap; // The shared state of the cluster
-	BlockingQueue<Address> availableServers; // A queue of the available servers. When one is removed from the queue, it is not removed from 
-	Address localAddress; // The local address, used to make sure that the local JVM is not considered an available server.
+	BlockingQueue<Server> availableServers; // A queue of the available servers. When one is removed from the queue, it is not removed from 
+	Server localAddress; // The local address, used to make sure that the local JVM is not considered an available server.
 	/**
 	 * Creates a new NetworkState, where you input the local address of this node, so that the NetworkState does not consider that an available server. 
 	 * @param localAddress The local address of this node in the cluster. 
 	 */
-	public NetworkState(Address localAddress)
+	public NetworkState(Server localAddress)
 	{
-		this.servers = new HashMap<Address, MemberState>();
-		this.availableServers = new LinkedBlockingQueue<Address>();
+		this.servers = new HashMap<Server, MemberState>();
+		this.availableServers = new LinkedBlockingQueue<Server>();
 		this.localAddress = localAddress;
 		this.sharedStateMap = new ConcurrentHashMap<String, byte[]>();
 	}
@@ -44,7 +41,7 @@ public class NetworkState implements Serializable{
 	 * @param address The address that the change came from. 
 	 * @param state The new state of that address. 
 	 */
-	public synchronized void setServerState(Address address, MemberState state)
+	public synchronized void setServerState(Server address, MemberState state)
 	{
 		// The map returns the previous value of the key, when you call put(). I use that here to save the previous value. 
 		MemberState prevState = servers.put(address, state);
@@ -69,7 +66,7 @@ public class NetworkState implements Serializable{
 	 * @param server The server that may, or may not still be in the cluster. 
 	 * @return whether or not the server is in the cluster. 
 	 */
-	public synchronized boolean containsServer(Address server)
+	public synchronized boolean containsServer(Server server)
 	{
 		return servers.containsKey(server);
 	}
@@ -77,7 +74,7 @@ public class NetworkState implements Serializable{
 	 * Removes a server from this state. 
 	 * @param address The address of the server to be removed. 
 	 */
-	public synchronized void removeServer(Address address)
+	public synchronized void removeServer(Server address)
 	{
 		servers.remove(address);
 		availableServers.remove(address);
@@ -88,7 +85,7 @@ public class NetworkState implements Serializable{
 	 * @return a available server (or null). 
 	 * @throws InterruptedException if the current thread is interrupted. 
 	 */
-	public Address getAvailableServer() throws InterruptedException
+	public Server getAvailableServer() throws InterruptedException
 	{
 		return availableServers.take();
 	}
@@ -97,7 +94,7 @@ public class NetworkState implements Serializable{
      * @param server the server that was available that you didn't use. 
 	 * @throws InterruptedException 
      */
-	public synchronized void didntUseAvailableServer(Address server) throws InterruptedException {
+	public synchronized void didntUseAvailableServer(Server server) throws InterruptedException {
 		if (servers.get(server) == MemberState.AVAILABLE)
 		{
 			availableServers.put(server);
@@ -108,7 +105,7 @@ public class NetworkState implements Serializable{
 	 * @param server the server you want the state from. 
 	 * @return the current state of the server (or null if it isn't in the current cluster). 
 	 */
-	public synchronized MemberState getServerState(Address server)
+	public synchronized MemberState getServerState(Server server)
 	{
 		return servers.get(server);
 	}
@@ -121,7 +118,7 @@ public class NetworkState implements Serializable{
 	 * 
 	 * @return a map of all the servers as the key, and their current state as the value. 
 	 */
-	public synchronized Map<Address, MemberState> getServerMap()
+	public synchronized Map<Server, MemberState> getServerMap()
 	{
 		return servers;
 	}

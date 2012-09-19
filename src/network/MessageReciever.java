@@ -1,6 +1,6 @@
 package network;
 
-import org.jgroups.*;
+import network.data.Server;
 
 public interface MessageReciever {
 	/**
@@ -8,5 +8,5 @@ public interface MessageReciever {
 	 * @param obj the received object. 
 	 * @param sender the sender. 
 	 */
-	public void Recieve(Object obj, Address sender);
+	public void Recieve(Object obj, Server sender);
 }

@@ -4,6 +4,6 @@
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
 	<classpathentry kind="src" path="/Tools"/>
 	<classpathentry kind="lib" path="lib/grail.jar"/>
-	<classpathentry kind="lib" path="lib/jgroups-3.0.8.Final.jar"/>
+	<classpathentry kind="lib" path="lib/jgroups-3.0.14.Final.jar.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
