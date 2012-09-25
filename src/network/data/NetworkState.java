@@ -37,6 +37,16 @@ public class NetworkState implements Serializable{
 		this.sharedStateMap = new ConcurrentHashMap<String, byte[]>();
 	}
 	/**
+	 * Sets the server that is considered the local address from this point forward. 
+	 * 
+	 * Is only supposed to be called once, when a local address is available. 
+	 * @param local
+	 */
+	public void setLocal(Server local)
+	{
+		this.localAddress = local;
+	}
+	/**
 	 * This method is called whenever this node receives an update about a nodes state. 
 	 * @param address The address that the change came from. 
 	 * @param state The new state of that address. 

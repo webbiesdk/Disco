@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -167,7 +168,7 @@ public class DisCo<E> {
 				resultLatch.await(); 
 				if (container.isAborted())
 				{
-					throw new ExecutionException(new RuntimeException("Job was aborted/cancelled."));
+					throw new CancellationException("Job was aborted/cancelled.");
 				}
 				return result.getResult();
 			}
@@ -198,7 +199,7 @@ public class DisCo<E> {
 							resultLatch.await();
 							if (container.isAborted())
 							{
-								res.setException(new ExecutionException(new RuntimeException("Job was aborted/cancelled.")));								
+								res.setException(new CancellationException("Job was aborted/cancelled."));								
 							}
 						} catch (InterruptedException e) {
 							res.setException(e);
@@ -221,6 +222,8 @@ public class DisCo<E> {
 						throw (ExecutionException)e;
 					else if (e instanceof TimeoutException)
 						throw (TimeoutException)e;
+					else if (e instanceof CancellationException)
+						throw (CancellationException)e;
 					else
 						e.printStackTrace();
 				}

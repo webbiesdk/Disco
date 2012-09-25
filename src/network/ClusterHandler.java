@@ -252,7 +252,6 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 					break;
 				}
 				
-
 				// Checking if this job was received from someone else. It is null if it wasn't received from the outside.  
 				ReceivedJob<E> received;
 				synchronized(receivedJobs)
@@ -281,7 +280,6 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 				}
 				else
 				{
-					System.out.println("Send work: " + work.getId() + " to " + server);
 					synchronized(sentJobs)
 					{
 						// First of all doing some more checking. And the second condition in the if actually sends the job. 
@@ -405,19 +403,18 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 					SendToServer(new ClusterMessage(ClusterMessage.Message.RESULT_CLASSEXCEPTION, pack.getId()), sender);
 					
 					// And i also make sure to recover the job, or else it would just be lost. 
-					System.out.println("And recovering the job");
 					recoverJob(pack.getId(), sender);
 				}
 			}
 		}
-		// This shouldn't be called, ever. But i still keep it in case something weird happens to the sender, because then we do risk that they send an WorkContainer. 
+		// This shouldn't be called, ever. But it still works, so i keep it in case i change something.  
 		else if (obj instanceof WorkContainer)
 		{
 			System.out.println("A WorkContainer was send, that's not supposed to happen!");
 			WorkContainer work = (WorkContainer)obj;
 			receiveWork(work, sender);
 		}
-		// This shouldn't be called, ever. But i still keep it in case something weird happens to the sender, because then we do risk that they send a Result. 
+		// This shouldn't be called, ever. But it still works, so i keep it in case i change something. 
 		else if (obj instanceof Result)
 		{
 			System.out.println("A Result was send, that's not supposed to happen!");
@@ -451,7 +448,10 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 					workIterator.remove();
 					try {
 						env.putJobInQueue(work);
-					} catch (InterruptedException ignored) {/* Should really not happen */}
+					} catch (InterruptedException ignored) {
+						// Should really not happen But i would like to know if it did. 
+						ignored.printStackTrace();
+					}
 				}
 			}
 			if (workList.size() == 0)
@@ -510,7 +510,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 					{
 						try {
 							// Telling that world that we are not busy. 
-							serverList.isBusy(false);
+							serverList.reportAvailable(true);
 						} catch (Exception ignored) {}
 					}
 					
@@ -537,7 +537,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 		else if (activeJobs == maxActiveOutsideJobs)
 		{
 			try {
-				serverList.isBusy(true);
+				serverList.reportAvailable(false);
 			} catch (Exception ignored) {}
 		}
 	}
@@ -565,7 +565,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 				}
 			}
 		}
-		System.out.println("Got result " + result.getID() + "(" + result.getJobID() + ") from " + sender);
+		// System.out.println("Got result " + result.getID() + "(" + result.getJobID() + ") from " + sender);
 		env.submitResult(result);
 	}
 	/**
@@ -603,13 +603,13 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
 		}
 		else if (message.getMessage() == ClusterMessage.Message.WORK_CLASSEXCEPTION)
 		{
+			System.out.println("Got a WORK_CLASSEXCEPTION recovering and sending some classes in his direction");
 			// A job couldn't be translated by the far side. 
-			// We just put the job back in the queue, and send the classes that could fix the issue. 
+			// We just put the job back in the queue, and send the classes that could fix the issue.			
 			for (Entry<String, byte[]> entry : classes.entrySet())
 			{
 				serverList.sendStateEntry(entry.getKey(), entry.getValue());
 			}
-			System.out.println("Got a WORK_CLASSEXCEPTION recovering");
 			recoverJob(message.getId(), sender);
 		}
 		else if (message.getMessage() == ClusterMessage.Message.RESULT_CLASSEXCEPTION)

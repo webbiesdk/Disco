@@ -51,7 +51,7 @@ public class ServerList implements Receiver {
         channel.connect("DisCoCluster");
         
         // Now to tell the cluster if we are open for business. 
-        isBusy(!reportAvailable);
+        reportAvailable(reportAvailable);
     }
 	/**
 	 * Attempts to close the ServerList. 
@@ -81,23 +81,39 @@ public class ServerList implements Receiver {
     	List<Address> deleted = new ArrayList<Address>(memberList);
     	// Then i remove all those that are left. 
     	deleted.removeAll(new_view.getMembers()); // I know that i modify the memberList by doing this. But i but a new list into memberList in the next line.
+    	
+    	// I also want to see who is new. 
+    	List<Address> added = new ArrayList<Address>(new_view.getMembers());
+    	// Removing the old to see who is new. 
+    	added.removeAll(memberList);
     	// And update the list to reflect the new members. 
     	memberList = new_view.getMembers();
     	
     	// Making callbacks if any client disappeared. 
-    	if (deleted.size() != 0) 
-    	{
-    		for (Address address : deleted)
-    		{
-    			Server server = new Server(address);
-    			synchronized(state) {
-    				state.removeServer(server);
-                }
-    			deletedServerListener.actionPerformed(new ActionEvent(server, 0, "Server removed"));
-    		}
-    	}
+    	for (Address address : deleted)
+		{
+			Server server = new Server(address);
+			synchronized(state) {
+				state.removeServer(server);
+            }
+			deletedServerListener.actionPerformed(new ActionEvent(server, 0, "Server removed"));
+		}
+    	
+    	// Telling the world that we are here. 
+		for (Address address : added)
+		{
+			try {
+				reportAvailable(reportAvailable,address);
+			} catch (Exception e) {
+				// Yeah, not supposed to happen. 
+				// But if it does, its not a catastrophe. So we just continue. 
+				// Printing it out anyway for potential debugging. 
+				e.printStackTrace();
+			} 
+		}
     }
     
+    boolean firstReceive = true;
     /**
      * This method is called by jGroups whenever a message is received. 
      * Then this method either handles it as part of the shared state, or sends it to the receiver. 
@@ -105,6 +121,12 @@ public class ServerList implements Receiver {
      */
     @Override
     public void receive(Message msg) {
+    	if (firstReceive)
+    	{
+    		state.setLocal(new Server(this.channel.getAddress()));
+    		firstReceive = false;
+    	}
+    	
     	Object obj = msg.getObject();
         if (obj instanceof NetworkState.MemberState)
         {
@@ -118,7 +140,7 @@ public class ServerList implements Receiver {
         {
         	// We received a new entry for the shared state. 
         	StateEntry stateEntry = (StateEntry)obj;
-    		System.out.println("Received a shared state entry for " + stateEntry.getKey());
+    		// System.out.println("Received a shared state entry for " + stateEntry.getKey());
     		state.putInSharedState(stateEntry);
         }
         else
@@ -180,22 +202,33 @@ public class ServerList implements Receiver {
     	return state.getSharedState();
     }
     /**
-     * Sets the current state of this server. 
-     * @param busy = true. Available = false;
+     * Sets the current state of this server.  True = available. 
+     * @param available = true. busy = false;
+     * @param server The server to send it too. 
      * @throws Exception 
      */
-    public void isBusy(Boolean busy) throws Exception
+    public void reportAvailable(Boolean reportAvailable) throws Exception
+    {
+    	reportAvailable(reportAvailable, null);
+    }
+    /**
+     * Sets the current state of this server.  True = available. 
+     * @param available = true. busy = false;
+     * @param server The server to send it too. 
+     * @throws Exception 
+     */
+    public void reportAvailable(boolean reportAvailable, Address server)
     {
     	NetworkState.MemberState message; 
-    	if (busy)
-    	{
-    		message = NetworkState.MemberState.BUSY;
-    	}
-    	else
+    	if (reportAvailable)
     	{
     		message = NetworkState.MemberState.AVAILABLE;
     	}
-    	SendToServer(message, (Address)null, null);
+    	else
+    	{
+    		message = NetworkState.MemberState.BUSY;
+    	}
+    	SendToServer(message, server, null);
     }
     /**
      * This method is called whenever you got a server from getAvailableServer, but then didn't use that anyway. 

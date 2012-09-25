@@ -49,4 +49,9 @@ public class BytePackage implements Serializable{
 	{
 		return this.id;
 	}
+	@Override
+	public String toString()
+	{
+		return "Bytes: " + type;
+	}
 }

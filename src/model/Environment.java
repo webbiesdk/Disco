@@ -224,6 +224,7 @@ public class Environment<E> {
 	}
 	/**
 	 * A method used to call a callback when the result associated with the WorkContainer with the id of param:id. 
+	 * There can only be one callback for each id. 
 	 * @param id. The id if the WorkContainer from which you are awaiting the result. 
 	 * @param callback a ActionListener thats called when the result is here, the result is available in the getSource in the ActionEvent that is parsed to the ActionListener. 
 	 */
