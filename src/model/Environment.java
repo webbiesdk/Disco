@@ -18,7 +18,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * 2: Providing a simple interface to a jobQueue (specified in the constructor). 
  * 3: Maintaining a map of all the jobs that needs more results before they can proceed. 
  * 4: Take results that are completed, and send them to the right place. 
- * 5: Wait for the final result to be ready. 
+ * 5: Wait for the final result(s) to be ready. 
  * @author Erik Krogh Kristensen
  *
  */

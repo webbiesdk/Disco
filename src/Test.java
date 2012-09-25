@@ -1,11 +1,12 @@
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import model.Job;
 import testData.PrimeJob;
 public class Test {
-	public static <E> void main(String[] args) throws InterruptedException, ExecutionException
+	public static <E> void main(String[] args) throws InterruptedException, ExecutionException, TimeoutException
 	{
-		
 		System.out.println("Start");
 		long start = System.currentTimeMillis();
 		Job<Integer> job = new PrimeJob(1, 3000000);

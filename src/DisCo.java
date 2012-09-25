@@ -80,6 +80,26 @@ public class DisCo<E> {
 		}
 	}
 	/**
+	 * Adds a classes to the cluster, so that the cluster can understand jobs sent from this client.
+	 * 
+	 * This method must be called before the job that relates to the classes is executed using execute(). 
+	 * @param clazzes The classes to add to the cluster. 
+	 */
+	public void addClasses(Class<?>... clazzes)
+	{
+		if (cluster != null)
+		{
+			for (Entry<String, byte[]> entry : getClassesMap(clazzes).entrySet())
+			{
+				cluster.addToClasses(entry.getKey(), entry.getValue());
+			}
+		}
+		else
+		{
+			throw new IllegalArgumentException("This method is only valid if a DisCo is configured to use a network cluster.");
+		}
+	}
+	/**
 	 * Returns a Future that holds the result from the job that was given as a input. 
 	 * The get method of the Future throws an ExecutionException if the job was cancelled. 
 	 * @param job The job that should be calculated. 
@@ -155,7 +175,7 @@ public class DisCo<E> {
 			@Override
 			public synchronized E get(final long timeout, final TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
 				final ObjectContainer<E> res = new ObjectContainer<E>();
-				Lock lock = new ReentrantLock();
+				final CountDownLatch waitingLatch = new CountDownLatch(1);
 				final Thread timeOutThread = new Thread(new Runnable(){
 					@Override
 					public void run() {
@@ -164,8 +184,10 @@ public class DisCo<E> {
 						} catch (InterruptedException e) {
 							return;
 						}
+						res.setException(new TimeoutException("Waited the " + timeout + " " + unit + "."));
 						container.abort();
 						resultLatch.countDown();
+						waitingLatch.countDown();
 					}
 				});
 				Thread resultThread;
@@ -183,12 +205,13 @@ public class DisCo<E> {
 						}
 						res.setObject(result.getResult());
 						timeOutThread.interrupt();
+						waitingLatch.countDown();
 					}
 				});
 				
 				timeOutThread.start();
 				resultThread.start();
-				lock.lock();
+				waitingLatch.await();
 				try {
 					return res.getObject();
 				} catch (Exception e) {
@@ -210,15 +233,19 @@ public class DisCo<E> {
 	class ObjectContainer<T> {
 		T obj;
 		Exception e = null;
-		void setObject(T obj)
+		synchronized void setObject(T obj)
 		{
 			this.obj = obj;
 		}
-		void setException(Exception e)
+		synchronized void setException(Exception e)
 		{
-			this.e = e;
+			// Only 1 exception, the first. 
+			if (this.e == null)
+			{
+				this.e = e;
+			}
 		}
-		T getObject() throws Exception
+		synchronized T getObject() throws Exception
 		{
 			if (e != null)
 				throw e;
