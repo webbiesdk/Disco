@@ -32,7 +32,7 @@ public class WorkContainer<E> implements Runnable, Serializable {
 	private List<E> results = null; // The results that got in, that now waits to be treated. 
 	private Map<Integer, WorkContainer<E>> missingJobs = null; // The results that we are still waiting for. 
 	
-	private Job<E> job; // The job that this container contains. 
+	private InternalJob<E> job; // The job that this container contains.
 	transient private Environment<E> env; // Much goes through the Environment. 
 	private long id; // The id that this is assigned at construction time.  
 	private long parent; // The ID of the parent. This ID is unique on the machine that the parent is stored on. 
@@ -53,7 +53,7 @@ public class WorkContainer<E> implements Runnable, Serializable {
 	 * @param parent : The parents unique ID. (Still only on this machine)
 	 * @param parentJobID : The id that this job has within its parent. 
 	 */
-	public WorkContainer(Environment<E> envIn, Job<E> job, long id, long parent, int parentJobID)
+	public WorkContainer(Environment<E> envIn, InternalJob<E> job, long id, long parent, int parentJobID)
 	{
 		this.job = job;
 		this.env = envIn;
@@ -88,7 +88,7 @@ public class WorkContainer<E> implements Runnable, Serializable {
 			@Override
 			public void actionPerformed(ActionEvent action) {
 				@SuppressWarnings("unchecked")
-				Job<E> job = (Job<E>) action.getSource();
+                InternalJob<E> job = (InternalJob<E>) action.getSource();
 				invokeJob(job);
 			}
 		};
@@ -99,7 +99,7 @@ public class WorkContainer<E> implements Runnable, Serializable {
 	 * The argument is the subjob that was given by the job. 
 	 * @param job The subjob that was given by the job, whose result the job needs before it can continue. 
 	 */
-	private void invokeJob(Job<E> job)
+	private void invokeJob(InternalJob<E> job)
 	{
 		// Locking because a while a subjob is being committed, it can happen that a completed sub-result is submitted. 
 		subJobLock.lock();
@@ -122,7 +122,7 @@ public class WorkContainer<E> implements Runnable, Serializable {
 			
 			// Counting up. 
 			int subJobId = getNextSubJobId();
-			WorkContainer<E> newJob = new WorkContainer<E>(env, (Job<E>) job, env.getIncrementedLocalId(), getId(), subJobId);
+			WorkContainer<E> newJob = new WorkContainer<E>(env, (InternalJob<E>) job, env.getIncrementedLocalId(), getId(), subJobId);
 			
 			synchronized(getObject())
 			{
@@ -170,7 +170,7 @@ public class WorkContainer<E> implements Runnable, Serializable {
 	 * 
 	 * @return the job that this WorkContainer contains. 
 	 */
-	public Job<E> getJob()
+	public InternalJob<E> getJob()
 	{
 		return job;
 	}

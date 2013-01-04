@@ -146,7 +146,7 @@ public class ServerList implements Receiver {
         else
         {
         	// When i do not know what to do with it, i pass it on. 
-        	receiver.Recieve(msg.getObject(), new Server(msg.getSrc()));
+        	receiver.recieve(msg.getObject(), new Server(msg.getSrc()));
         }
     }
     /**

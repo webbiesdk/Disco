@@ -8,5 +8,5 @@ public interface MessageReciever {
 	 * @param obj the received object. 
 	 * @param sender the sender. 
 	 */
-	public void Recieve(Object obj, Server sender);
+	public void recieve(Object obj, Server sender);
 }
