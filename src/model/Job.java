@@ -1,5 +1,6 @@
 package model;
 
+import java.io.Serializable;
 import java.util.List;
 
 /**
@@ -10,7 +11,7 @@ import java.util.List;
  * @author Erik
  * @date 04-01-13, 19:56
  */
-public interface Job<E> {
+public interface Job<E> extends Serializable {
     /**
      * This method is called the first time the worker has to do something.
      * The worker can do one of 2 things:

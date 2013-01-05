@@ -1,6 +1,7 @@
 .idea/
 Disco.iml
 out/
+bin/
 
 
 /build

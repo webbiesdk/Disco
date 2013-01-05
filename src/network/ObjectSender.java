@@ -1,7 +1,5 @@
 package network;
 
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
@@ -23,14 +21,14 @@ public class ObjectSender{
 		{
 			final ArrayList<String> sendList = new ArrayList<String>();
 			sendList.add("Dette er en tekst");
-			list.addAddedIpListener(new ActionListener(){
-				@Override
-				public void actionPerformed(ActionEvent e) {
-					sendTo(sendList, (InetAddress)e.getSource());
-					list.removeAddedIpListener(this);
-					list.close();
-				}
-			});
+			list.addAddedIpObserver(new IPChangedObserver() {
+                @Override
+                public void ipChanged(InetAddress address) {
+                    sendTo(sendList, address);
+                    list.removeAddedIpListener(this);
+                    list.close();
+                }
+            });
 			list.start();
 		}
 		else

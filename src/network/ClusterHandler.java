@@ -2,8 +2,6 @@ package network;
 
 import io.RuntimeClassLoader;
 
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -18,6 +16,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import model.Environment;
 import model.Result;
 import model.WorkContainer;
+import model.WorkDoneObserver;
 import network.data.BytePackage;
 import network.data.ClusterMessage;
 import network.data.NetworkState;
@@ -35,7 +34,7 @@ import network.data.Server;
  * @param <E>
  * @author Erik Krogh Kristensen
  */
-public class ClusterHandler<E> implements Runnable, MessageReciever {
+public class ClusterHandler<E> implements Runnable, MessageReceiver, DeletedServerListener {
     private Environment<E> env; // The Environment that i interact with.
     private ServerList serverList; // The ServerList i use to keep a reference to all the other servers in the cluster (and to discover them).
     private CountDownLatch serverListReady;
@@ -137,23 +136,6 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
     }
 
     /**
-     * A private method that returns a ActionListener that is called when a server is removed/disappears from the network.
-     * <p/>
-     * This method should only be called once, because it doesn't cache the value. (It returns a new ActionListener() each time).
-     *
-     * @return a the ActionListener that is called when a server is removed/disappears from the network.
-     */
-    private ActionListener getDeletedServerListener() {
-        return new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                Server address = (Server) e.getSource();
-                serverCrashed(address);
-            }
-        };
-    }
-
-    /**
      * Starts the cluster.
      */
     public void start() {
@@ -205,7 +187,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
     @Override
     public void run() {
         this.serverList = new ServerList(this, reportAvailable);
-        this.serverList.setDeletedServerListener(getDeletedServerListener());
+        this.serverList.addDeletedServerObserver(this);
 
         try {
             this.serverList.start();
@@ -397,7 +379,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
     /**
      * This method is used to recover the jobs, that for some reason was sent to, but not completed by the receiver.
      *
-     * @param id     The id of the InternalJob. From this the job is found in the sent jobs.
+     * @param id     The id of the Job. From this the job is found in the sent jobs.
      * @param sender The address of the node that wasn't able to complete the job.
      */
     private void recoverJob(long id, Server sender) {
@@ -438,7 +420,6 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
         // Setting the new ID.
         work.setId(newID);
         // Part of the contract with WorkContainer is that these 2 methods are called whenever it reaches another client, so we do that.
-        work.resetInvokeListener(); // This one because an instance of an anonymous class can't be serialized.
         work.setEnvironment(this.env); // It is obvious that the environment can't and shouldn't be sent over the air.
 
         // Used when sending back the result.
@@ -453,16 +434,16 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
         // System.out.println("Got work: " + prevID);
         try {
             // Setting the callback first
-            env.callWhenFinalResultDone(newID, new ActionListener() {
+            env.setWorkDoneObserver(newID, new WorkDoneObserver<E>() {
                 @Override
-                public void actionPerformed(ActionEvent arg) {
+                public void workDone(E result) {
                     synchronized (receivedJobs) {
                         receivedJobs.remove(newID); // Now it is finally gone.
                     }
 
                     // Always the most important stuff first. So first i send back the result.
                     //System.out.println("Sending back: " + prevID);
-                    Result res = new Result(prevID, work.getParentJobId(), ParentID, arg.getSource());
+                    Result<E> res = new Result(prevID, work.getParentJobId(), ParentID, result);
                     SendToServer(res, sender);
 
                     // This see if we need to tell the world that we are now open for business.
@@ -474,7 +455,6 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
                         } catch (Exception ignored) {
                         }
                     }
-
                 }
             });
 
@@ -574,7 +554,7 @@ public class ClusterHandler<E> implements Runnable, MessageReciever {
      *
      * @param server the server that crashed.
      */
-    private synchronized void serverCrashed(Server server) {
+    public synchronized void serverDeleted(Server server) {
 		/*
 		 * There are two parts to this. 
 		 * 1: We need to recover those jobs that we send out to the crashed client. 

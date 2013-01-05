@@ -1,5 +1,3 @@
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -13,8 +11,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-import model.InternalJob;
 import model.Job;
+import model.WorkDoneObserver;
 import network.ClusterHandler;
 
 import collections.StackBlockingQueue;
@@ -102,11 +100,10 @@ public class DisCo<E> {
      * Returns a Future that holds the result from the job that was given as a input.
      * The get method of the Future throws an ExecutionException if the job was cancelled.
      *
-     * @param inputJob The job that should be calculated.
+     * @param job The job that should be calculated.
      * @return A future holding the result from the job, and gives a interface to cancel it.
      */
-    public Future<E> execute(Job<E> inputJob) {
-        InternalJob job = new InternalJob(inputJob);
+    public Future<E> execute(Job<E> job) {
         // First setting all the variables that we use.
         long id = env.getIncrementedLocalId();
 
@@ -130,11 +127,10 @@ public class DisCo<E> {
             // This really shouldn't happen.
             throw new RuntimeException("Could not put the job in the queue because of an interrupt. ");
         }
-        env.callWhenFinalResultDone(id, new ActionListener() {
-            @SuppressWarnings("unchecked")
+        env.setWorkDoneObserver(id, new WorkDoneObserver<E>() {
             @Override
-            public void actionPerformed(ActionEvent e) {
-                result.setObject((E) e.getSource());
+            public void workDone(E gotResult) {
+                result.setObject(gotResult);
                 resultLatch.countDown();
             }
         });
@@ -163,7 +159,7 @@ public class DisCo<E> {
             public synchronized E get() throws InterruptedException, ExecutionException {
                 resultLatch.await();
                 if (container.isAborted()) {
-                    throw new CancellationException("InternalJob was aborted/cancelled.");
+                    throw new CancellationException("Job was aborted/cancelled.");
                 }
                 try {
                     return result.getObject();
@@ -199,7 +195,7 @@ public class DisCo<E> {
                         try {
                             resultLatch.await();
                             if (container.isAborted()) {
-                                res.setException(new CancellationException("InternalJob was aborted/cancelled."));
+                                res.setException(new CancellationException("Job was aborted/cancelled."));
                             }
                         } catch (InterruptedException e) {
                             res.setException(e);

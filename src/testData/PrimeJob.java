@@ -1,11 +1,12 @@
 package testData;
 
+import java.io.Serializable;
 import java.util.List;
 
 import model.Job;
 import model.DisCoScheduler;
 
-public class PrimeJob implements Job<Integer> {
+public class PrimeJob implements Job<Integer>, Serializable {
 	/**
 	 * Remember to increment when developing. 
 	 */
