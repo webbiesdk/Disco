@@ -226,7 +226,7 @@ public class ClusterHandler<E> implements Runnable, MessageReceiver, DeletedServ
                 }
 
 				/*
-				 * Before actually sending them there are 2 things that could make me change my mind. 
+                 * Before actually sending them there are 2 things that could make me change my mind.
 				 * 1: The server is no longer available. This can happen because getting the job can take a long time. 
 				 * 2: The job we are trying to send is a job that we received from someone else, so no point in wasting more bandwidth by passing it on. 
 				 */
@@ -675,8 +675,6 @@ public class ClusterHandler<E> implements Runnable, MessageReceiver, DeletedServ
                         env.removeIdleJob(entry.getKey());
                     }
                 }
-
-
             }
         }, "Abort cleanup thread").start();
 

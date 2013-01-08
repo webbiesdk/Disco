@@ -11,7 +11,7 @@ import java.util.List;
  * @author Erik
  * @date 04-01-13, 19:56
  */
-public interface Job<E> extends Serializable {
+public interface Job<E> {
     /**
      * This method is called the first time the worker has to do something.
      * The worker can do one of 2 things:

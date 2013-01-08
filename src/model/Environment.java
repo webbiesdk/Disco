@@ -2,11 +2,10 @@ package model;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -22,10 +21,9 @@ import java.util.concurrent.locks.ReentrantLock;
  * @author Erik Krogh Kristensen
  */
 public class Environment<E> {
-    private long id = 0; // The id that gets incremented each time a WorkContainer is assigned an id.
-    private Lock idLock; // A lock that prevents race-conditions when handling the id. (getIncrementedLocalId()).
+    private AtomicLong uniqueId;
 
-    private BlockingDeque<WorkContainer<E>> jobQueue; // The queue that holds all the Runnable jobs.
+    private JobQueue<E> jobQueue;
     private ConcurrentMap<Long, WorkContainer<E>> idleJobs; // This map hold all the jobs that waits for some of their subjobs to complete. This map allows me to quickly find them when i got the result that they invoked.
 
 
@@ -33,86 +31,68 @@ public class Environment<E> {
     private Map<Long, WorkDoneObserver> finalResultsCallBacks; // This holds the callbacks that are launched when a finalResult is ready. The key is the ID of the WorkContainer you are waiting for.
     private Lock finalResultLock; // A lock to synchronize the 2 above.
 
-    /**
-     * Constructs a new Environment.
-     */
-    public Environment() {
-        this.jobQueue = new LinkedBlockingDeque<WorkContainer<E>>();
-        ;
-        this.idLock = new ReentrantLock();
+    private Map<Job<E>, WorkContainer<E>> jobWorkContainerMap;
+
+    public Environment(JobQueue jobQueue) {
+        this.jobQueue = jobQueue;
+
+        this.uniqueId = new AtomicLong(0);
+
+
         this.finalResultLock = new ReentrantLock();
-        this.idleJobs = new ConcurrentHashMap<Long, WorkContainer<E>>();
 
-        this.finalResults = new ConcurrentHashMap<Long, Result<E>>();
-        this.finalResultsCallBacks = new ConcurrentHashMap<>();
+        this.idleJobs = new ConcurrentHashMap();
 
-    }    /*
-	 * 1: Maintaining an id. 
+        this.finalResults = new HashMap();
+        this.finalResultsCallBacks = new HashMap<>();
+
+        jobWorkContainerMap = new ConcurrentHashMap<>();
+    }
+    /*
+	 * 1: Maintaining an uniqueId.
 	 */
 
     /**
-     * This method returns a ID unique on this Environment object. Will never return 0.
+     * This method returns a ID unique on this Environment object. Starts from 1.
      *
      * @return an unique id.
      */
     public long getIncrementedLocalId() {
-        idLock.lock();
-        try {
-            id++;
-            if (id == 0) {
-                id++;
-            }
-
-            return id;
-        } finally {
-            idLock.unlock();
-        }
+        return uniqueId.addAndGet(1);
     }
-	/*
-	 * 2: Simple interface to the jobQueue. 
-	 */
-
     /**
-     * Returns the internal dequeue, it is safe to modify this externally. By adding results, if removing anything, make sure that to run the Runnables, or this whole thing will get corrupted.
-     * <p/>
-     * This method is normally used to get the queue, that is then submitted to some kind of thread pool or cluster thing.
-     *
-     * @return the internal dequeue.
-     */
-    public BlockingDeque<WorkContainer<E>> getDeque() {
-        return jobQueue;
-    }
-
-    /**
-     * Returns the "highest" element from the queue, meaning the one that takes to least time to be calculated.
-     * If you draw an recursion tree, i this method returns the deepest element of the Runnables.
-     *
-     * @return the Runnable that takes the least time to calculate.
+     * @return the next WorkContainer for local processing.
      * @throws InterruptedException
      */
     public WorkContainer<E> getLocalJobFromQueue() throws InterruptedException {
-        return jobQueue.takeLast();
+        Job<E> job = jobQueue.takeLocal();
+        if (job == null) {
+            return null;
+        }
+        return jobWorkContainerMap.remove(job);
     }
 
     /**
-     * Almost the same as getLocalJobFromQueue, except this one gets jobs from the opposite end of the queue.
-     * So if you draw an recursion tree, this method returns the top-most Runnable in the tree.
-     *
-     * @return the Runnable that takes the most time to calculate.
+     * @return the next WorkContainer for remote processing.
      * @throws InterruptedException
      */
     public WorkContainer<E> getRemoteJobFromQueue() throws InterruptedException {
-        return jobQueue.takeFirst();
+        Job<E> job = jobQueue.takeRemote();
+        if (job == null) {
+            return null;
+        }
+        return jobWorkContainerMap.remove(job);
     }
 
     /**
      * A method to put a new WorkContainer in the queue.
      *
-     * @param job the WorkContainer that should be run.
+     * @param workContainer the WorkContainer that should be run.
      * @throws InterruptedException
      */
-    public void putJobInQueue(WorkContainer<E> job) throws InterruptedException {
-        jobQueue.put(job);
+    public void putJobInQueue(WorkContainer<E> workContainer) throws InterruptedException {
+        jobWorkContainerMap.put(workContainer.getJob(), workContainer);
+        jobQueue.put(workContainer.getJob());
     }
 	/*
 	 * 3: Map of idle jobs. 
@@ -157,7 +137,7 @@ public class Environment<E> {
      * @return a map of the internal Jobs.
      */
     public Map<Long, WorkContainer<E>> getIdleJobs() {
-        return new HashMap<Long, WorkContainer<E>>(idleJobs);
+        return new HashMap(idleJobs);
     }
 	/*
 	 * 4: Sending results where they belong. 

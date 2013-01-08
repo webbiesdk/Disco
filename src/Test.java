@@ -10,7 +10,7 @@ public class Test {
         long start = System.currentTimeMillis();
         Job<Integer> job = new PrimeJob(1, 30000000);
 
-        DisCo<Integer> cluster = new DisCo<Integer>(1, true, false);
+        DisCo<Integer> cluster = new DisCo();
         System.out.println(cluster.execute(job).get());
 
         long end = System.currentTimeMillis();

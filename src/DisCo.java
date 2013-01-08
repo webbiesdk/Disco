@@ -1,24 +1,14 @@
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 
-import model.Job;
-import model.WorkDoneObserver;
+import model.*;
 import network.ClusterHandler;
 
-import collections.StackBlockingQueue;
 import concurrent.ThreadPool;
-import model.Environment;
-import model.WorkContainer;
 
 
 public class DisCo<E> {
@@ -57,42 +47,31 @@ public class DisCo<E> {
     }
 
     /**
-     * The complete constructor for DisCo.
-     *
      * @param threads         The number of threads this DisCo instance should use.
      * @param useCluster      Whether or not a cluster should be used.
      * @param reportAvailable If using a cluster, this variable sets whether or not this machine should accept jobs from other nodes.
      */
     public DisCo(int threads, boolean useCluster, boolean reportAvailable) {
-        this.env = new Environment<E>();
-
-        threads = threads == 0 ? Runtime.getRuntime().availableProcessors() + 1 : threads;
-
-        this.pool = new ThreadPool(new StackBlockingQueue<WorkContainer<E>>(env.getDeque()), threads);
-        pool.start();
-
-        new HashMap<Class<?>, Boolean>();
-
-        if (useCluster) {
-            cluster = new ClusterHandler<E>(env, reportAvailable);
-            cluster.start();
-        }
+        this(threads, useCluster, reportAvailable, new StandardJobQueue<E>());
     }
 
     /**
-     * Adds a classes to the cluster, so that the cluster can understand jobs sent from this client.
-     * <p/>
-     * This method must be called before the job that relates to the classes is executed using execute().
-     *
-     * @param clazzes The classes to add to the cluster.
+     * @param threads         The number of threads this DisCo instance should use.
+     * @param useCluster      Whether or not a cluster should be used.
+     * @param reportAvailable If using a cluster, this variable sets whether or not this machine should accept jobs from other nodes.
+     * @param jobQueue        The JobQueue to use.
      */
-    public void addClasses(Class<?>... clazzes) {
-        if (cluster != null) {
-            for (Entry<String, byte[]> entry : getClassesMap(clazzes).entrySet()) {
-                cluster.addToClasses(entry.getKey(), entry.getValue());
-            }
-        } else {
-            throw new IllegalArgumentException("This method is only valid if a DisCo is configured to use a network cluster.");
+    public DisCo(int threads, boolean useCluster, boolean reportAvailable, JobQueue<E> jobQueue) {
+        this.env = new Environment(jobQueue);
+
+        threads = threads == 0 ? Runtime.getRuntime().availableProcessors() + 1 : threads;
+
+        this.pool = new ThreadPool(env, threads);
+        pool.start();
+
+        if (useCluster) {
+            cluster = new ClusterHandler(env, reportAvailable);
+            cluster.start();
         }
     }
 
@@ -114,7 +93,7 @@ public class DisCo<E> {
             }
         }
 
-        final WorkContainer<E> container = new WorkContainer<E>(env, job, id, 0, 0);
+        final WorkContainer<E> container = new WorkContainer(env, job, id, 0, 0);
 
         final CountDownLatch resultLatch = new CountDownLatch(1);
 
@@ -215,43 +194,35 @@ public class DisCo<E> {
                 waitingLatch.await();
                 try {
                     return res.getObject();
+                } catch (InterruptedException | ExecutionException | TimeoutException | CancellationException e) {
+                    throw e;
                 } catch (Exception e) {
-                    if (e instanceof InterruptedException)
-                        throw (InterruptedException) e;
-                    else if (e instanceof ExecutionException)
-                        throw (ExecutionException) e;
-                    else if (e instanceof TimeoutException)
-                        throw (TimeoutException) e;
-                    else if (e instanceof CancellationException)
-                        throw (CancellationException) e;
-                    else
-                        e.printStackTrace();
+                    throw new RuntimeException(e);
                 }
-                return null;
             }
         };
 
         return res;
     }
 
-    class ObjectContainer<T> {
-        T obj;
-        Exception e = null;
+    private class ObjectContainer<T> {
+        private T obj;
+        private Exception exception = null;
 
-        synchronized void setObject(T obj) {
+        public synchronized void setObject(T obj) {
             this.obj = obj;
         }
 
-        synchronized void setException(Exception e) {
+        public synchronized void setException(Exception e) {
             // Only 1 exception, the first.
-            if (this.e == null) {
-                this.e = e;
+            if (this.exception == null) {
+                this.exception = e;
             }
         }
 
-        synchronized T getObject() throws Exception {
-            if (e != null)
-                throw e;
+        public synchronized T getObject() throws Exception {
+            if (exception != null)
+                throw exception;
             return obj;
         }
     }
@@ -263,20 +234,18 @@ public class DisCo<E> {
         pool.shutdownNow();
         if (cluster != null) {
             cluster.close();
-        }
-        new Thread(new Runnable() {
-            @SuppressWarnings("static-access")
-            @Override
-            public void run() {
-                try {
-                    Thread.currentThread().sleep(3000);
-                } catch (InterruptedException ignored) {
-                }
-                if (cluster != null) {
+            new Thread(new Runnable() {
+                @SuppressWarnings("static-access")
+                @Override
+                public void run() {
+                    try {
+                        Thread.currentThread().sleep(3000);
+                    } catch (InterruptedException ignored) { }
+
                     cluster.close();
                 }
-            }
-        }).start();
+            }).start();
+        }
     }
 
     /**

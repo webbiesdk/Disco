@@ -83,9 +83,9 @@ public class WorkContainer<E> implements Runnable, Serializable {
     }
 
     /**
-     * For use when "this" does net reefer to this WorkContainer.
+     * For use when "this" does not reefer to this WorkContainer.
      *
-     * @return the object that its called on.
+     * @return this.
      */
     public WorkContainer<E> getObject() {
         return this;
@@ -102,25 +102,20 @@ public class WorkContainer<E> implements Runnable, Serializable {
         subJobLock.lock();
         try {
             if (!subJobsCommitted) {
-                // Since this is the first subJob that is invoked, we need to a little thing first.
-                env.putIdleJob(getObject()); // The parent is now an idle job.
+                env.putIdleJob(this);
             }
             if (missingJobs == null) {
-                // A container to hold the subJobs.
-                // I need these in case this job gets aborted, it need to tell the non-completed subjobs that they should abort to.
-                missingJobs = new HashMap<Integer, WorkContainer<E>>();
+                missingJobs = new HashMap();
             }
 
-            // Making sure things go as they should.
             subJobsCommitted = true;
 
-            // Counting up.
             int subJobId = getNextSubJobId();
-            WorkContainer<E> newJob = new WorkContainer<E>(env, job, env.getIncrementedLocalId(), getId(), subJobId);
+            WorkContainer<E> newJob = new WorkContainer(env, job, env.getIncrementedLocalId(), getId(), subJobId);
 
-            synchronized (getObject()) {
+            synchronized (this) {
                 // If this job is aborted, then launching a new subJob gives no sense, since it will never reach its proper parent.
-                if (getObject().getStatus() != WorkContainer.Status.ABORTED) {
+                if (getStatus() != WorkContainer.Status.ABORTED) {
                     try {
                         env.putJobInQueue(newJob);
                     } catch (InterruptedException e) {
@@ -157,7 +152,7 @@ public class WorkContainer<E> implements Runnable, Serializable {
     /**
      * Returns the job that this WorkContainer contains.
      * This is mainly to compare to jobs against each other.
-     * <p/>
+     *
      * Do not in any way modify it.
      *
      * @return the job that this WorkContainer contains.
@@ -260,8 +255,9 @@ public class WorkContainer<E> implements Runnable, Serializable {
                 results.add(null);
             }
 
-            if (missingJobs.containsKey(new Integer(id))) {
-                missingJobs.remove(new Integer(id));
+            Integer key = new Integer(id);
+            if (missingJobs.containsKey(key)) {
+                missingJobs.remove(key);
                 results.set(id, result);
                 // Everything that is a state change of this object, is synchronized to the object.
                 synchronized (this) {
@@ -318,7 +314,7 @@ public class WorkContainer<E> implements Runnable, Serializable {
         // Running the thing is easy, it should be.
         // work() and join() gets treated completely the same. Only difference being if earlier jobs are passed on.
         E result;
-        if (results == null || results.size() == 0) {
+        if (results == null) {
             result = job.work(scheduler);
         } else {
             result = job.join(results, scheduler);

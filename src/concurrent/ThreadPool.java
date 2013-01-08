@@ -1,33 +1,34 @@
 package concurrent;
 
+import model.Environment;
+
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.BlockingQueue;
 
 /**
- * This class is a simple ThreadPool, that takes runnables from an external queue, and executes them in the pool.
- * Unlike other pools, its safe to edit the queue from outside the pool, by removing or adding runnables.
+ * This class is a simple ThreadPool, that takes runnables from an external env, and executes them in the pool.
+ * Unlike other pools, its safe to edit the env from outside the pool, by removing or adding runnables.
  * This can be used to remove jobs if you want to execute those on another part of a cluster instead (just an example).
  * <p/>
- * The task are executed by the order they are in the queue (FIFO).
+ * The task are executed by the order they are in the env (FIFO).
  *
  * @author Erik Krogh Kristensen
  */
 public class ThreadPool {
-    BlockingQueue<? extends Runnable> queue;
+    Environment env;
     int corePoolSize;
     List<Thread> coreThreadPool;
 
-    public ThreadPool(BlockingQueue<? extends Runnable> queue) {
-        this(queue, Runtime.getRuntime().availableProcessors() + 1);
+    public ThreadPool(Environment env) {
+        this(env, Runtime.getRuntime().availableProcessors() + 1);
     }
 
-    public ThreadPool(BlockingQueue<? extends Runnable> queue, int corePoolSize) {
-        this.queue = queue;
+    public ThreadPool(Environment env, int corePoolSize) {
+        this.env = env;
         this.corePoolSize = corePoolSize;
-        this.coreThreadPool = new ArrayList<Thread>();
+        this.coreThreadPool = new ArrayList();
         for (int i = 0; i < corePoolSize; i++) {
-            Thread thread = new Thread(new Executer());
+            Thread thread = new Thread(new Executor());
             coreThreadPool.add(thread);
         }
     }
@@ -42,40 +43,25 @@ public class ThreadPool {
     }
 
     /**
-     * Shuts down the pool, and returns the remaining runnables in the queue as a list.
-     * The list should in most cases have a size of 0.
-     *
-     * @return list of remaining runnables in queue.
+     * Shuts down the pool.
      */
-    public List<Runnable> shutdownNow() {
+    public void shutdownNow() {
         for (Thread t : coreThreadPool) {
             t.interrupt();
         }
-        List<Runnable> res = new ArrayList<Runnable>();
-        queue.drainTo(res);
-        return res;
     }
 
     /**
-     * Returns the next element in the queue to be processed.
+     * Returns the next element in the env to be processed.
      *
-     * @return the next element in the queue to be processed.
+     * @return the next element in the env to be processed.
      */
     private Runnable getNext() {
         try {
-            return queue.take();
+            return env.getLocalJobFromQueue();
         } catch (InterruptedException ignored) {
             return null;
         }
-    }
-
-    /**
-     * Returns the queue that is used. This queue can safely be manipulated from outside the threadpool, by adding or removing elements.
-     *
-     * @return the queue that is used by the pool.
-     */
-    public BlockingQueue<? extends Runnable> getQueue() {
-        return queue;
     }
 
     /**
@@ -83,7 +69,7 @@ public class ThreadPool {
      *
      * @author Erik
      */
-    private class Executer implements Runnable {
+    private class Executor implements Runnable {
         @Override
         public void run() {
             Runnable next;
